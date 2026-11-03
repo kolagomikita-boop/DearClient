@@ -2,13 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.dearclient.launcher">
 
+    <!-- 1. Совместимость с твоим Android 16 -->
     <uses-sdk
         android:minSdkVersion="26"
         android:targetSdkVersion="35" />
 
-    <!-- Разрешение рисовать меню поверх Майнкрафта -->
+    <!-- 2. Право показывать меню поверх экрана Майнкрафта -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- 3. Право видеть установленный Minecraft -->
     <queries>
         <package android:name="com.mojang.minecraftpe" />
     </queries>
@@ -17,6 +19,7 @@
         android:label="Dear Client"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
 
+        <!-- Сам лаунчер -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -27,9 +30,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Внутриигровое плавающее меню -->
         <service
             android:name=".FloatingMenuService"
             android:enabled="true"
             android:exported="false" />
+
     </application>
 </manifest>
