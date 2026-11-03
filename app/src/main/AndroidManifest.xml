@@ -6,6 +6,11 @@
         android:minSdkVersion="26"
         android:targetSdkVersion="35" />
 
+    <!-- Разрешение видеть и открывать Minecraft на Android 16 -->
+    <queries>
+        <package android:name="com.mojang.minecraftpe" />
+    </queries>
+
     <application
         android:label="Dear Client"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
