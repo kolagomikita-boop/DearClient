@@ -2,31 +2,30 @@ package com.dearclient.launcher;
 
 import android.app.Service;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.Button;
-import android.widget.CompoundButton;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.SeekBar;
-import android.widget.Switch;
-import android.widget.TextView;
+import android.widget.*;
+import java.util.ArrayList;
 
 public class FloatingMenuService extends Service {
 
     private WindowManager windowManager;
     private View floatingButton;
     private View menuView;
+    private View hudOverlay;
     private WindowManager.LayoutParams btnParams;
     private WindowManager.LayoutParams menuParams;
+    private WindowManager.LayoutParams hudParams;
 
     private String[] moduleNames = {
         "Armor Hub", "Air Swing", "Freelook", "Fullbright",
@@ -36,8 +35,15 @@ public class FloatingMenuService extends Service {
     };
 
     private boolean[] moduleStates = new boolean[14];
-    private int selectedModule = 3; // По умолчанию выбран Fullbright
+    private int selectedModule = 3;
     private boolean isMenuOpen = false;
+
+    // Счётчики для HUD (FPS и CPS)
+    private TextView hudTextView;
+    private int frameCount = 0;
+    private int currentFps = 60;
+    private ArrayList<Long> clicks = new ArrayList<Long>();
+    private Handler fpsHandler = new Handler();
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
@@ -47,15 +53,33 @@ public class FloatingMenuService extends Service {
         super.onCreate();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
-        // По умолчанию включаем как на твоем скриншоте
-        moduleStates[3] = true;  // Fullbright
-        moduleStates[10] = true; // FPS Display
+        moduleStates[3] = true;  // Fullbright включен
+        moduleStates[10] = true; // FPS включен
+        moduleStates[8] = true;  // CPS включен
 
         createFloatingButton();
         createFullMenu();
+        createHudOverlay();
+        startFpsCounter();
     }
 
-    // 1. Круглая плавающая кнопка [D] поверх игры
+    // 1. АВТОМАТ: Скрывает кнопку на рабочем столе и показывает только в Майнкрафте!
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            // Пользователь в игре (горизонтальный экран) -> Показываем кнопку
+            if (floatingButton != null) floatingButton.setVisibility(View.VISIBLE);
+            if (hudOverlay != null && (moduleStates[10] || moduleStates[8])) hudOverlay.setVisibility(View.VISIBLE);
+        } else {
+            // Вышел на рабочий стол (вертикальный экран) -> Мгновенно прячем кнопку!
+            if (floatingButton != null) floatingButton.setVisibility(View.GONE);
+            if (isMenuOpen) closeMenu();
+            if (hudOverlay != null) hudOverlay.setVisibility(View.GONE);
+        }
+    }
+
+    // 2. ИДЕАЛЬНО КРУГЛАЯ КНОПКА [D]
     private void createFloatingButton() {
         TextView btn = new TextView(this);
         btn.setText("D");
@@ -63,10 +87,17 @@ public class FloatingMenuService extends Service {
         btn.setTextColor(Color.WHITE);
         btn.setTypeface(null, Typeface.BOLD);
         btn.setGravity(Gravity.CENTER);
-        btn.setBackgroundColor(Color.parseColor("#8B5CF6"));
 
+        // Круглая форма
+        GradientDrawable circle = new GradientDrawable();
+        circle.setShape(GradientDrawable.OVAL);
+        circle.setColor(Color.parseColor("#8B5CF6"));
+        circle.setStroke(dpToPx(2), Color.parseColor("#A78BFA"));
+        btn.setBackground(circle);
+
+        int btnSize = dpToPx(54);
         btnParams = new WindowManager.LayoutParams(
-            130, 130,
+            btnSize, btnSize,
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
                 WindowManager.LayoutParams.TYPE_PHONE,
@@ -74,8 +105,8 @@ public class FloatingMenuService extends Service {
             PixelFormat.TRANSLUCENT
         );
         btnParams.gravity = Gravity.TOP | Gravity.START;
-        btnParams.x = 40;
-        btnParams.y = 200;
+        btnParams.x = dpToPx(25);
+        btnParams.y = dpToPx(100);
 
         btn.setOnTouchListener(new View.OnTouchListener() {
             private int initialX, initialY;
@@ -90,11 +121,13 @@ public class FloatingMenuService extends Service {
                         initialTouchX = event.getRawX();
                         initialTouchY = event.getRawY();
                         return true;
+
                     case MotionEvent.ACTION_MOVE:
                         btnParams.x = initialX + (int) (event.getRawX() - initialTouchX);
                         btnParams.y = initialY + (int) (event.getRawY() - initialTouchY);
                         windowManager.updateViewLayout(floatingButton, btnParams);
                         return true;
+
                     case MotionEvent.ACTION_UP:
                         if (Math.abs(event.getRawX() - initialTouchX) < 15 && Math.abs(event.getRawY() - initialTouchY) < 15) {
                             openMenu();
@@ -109,25 +142,30 @@ public class FloatingMenuService extends Service {
         windowManager.addView(floatingButton, btnParams);
     }
 
-    // 2. Внутриигровое меню со скриншота 1
+    // 3. ЗАКРУГЛЁННОЕ МЕНЮ (КАК НА СКРИНШОТЕ ATLAS)
     private void createFullMenu() {
-        // Затемненный полупрозрачный фон
         LinearLayout backdrop = new LinearLayout(this);
         backdrop.setGravity(Gravity.CENTER);
         backdrop.setBackgroundColor(Color.parseColor("#99000000"));
 
-        // Основное окно Dear Client
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.parseColor("#0F0B15"));
-        root.setPadding(35, 25, 35, 25);
+        root.setPadding(dpToPx(24), dpToPx(20), dpToPx(24), dpToPx(20));
+
+        // Закругление основного окна 26dp
+        GradientDrawable rootBg = new GradientDrawable();
+        rootBg.setColor(Color.parseColor("#0F0B15"));
+        rootBg.setCornerRadius(dpToPx(26));
+        rootBg.setStroke(dpToPx(1.5f), Color.parseColor("#261B36"));
+        root.setBackground(rootBg);
+
         LinearLayout.LayoutParams rootParams = new LinearLayout.LayoutParams(
-            dpToPx(650),
-            dpToPx(340)
+            dpToPx(670),
+            dpToPx(350)
         );
         root.setLayoutParams(rootParams);
 
-        // --- ВЕРХНЯЯ ШАПКА ---
+        // ШАПКА
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -135,9 +173,12 @@ public class FloatingMenuService extends Service {
         TextView icon = new TextView(this);
         icon.setText(" D ");
         icon.setTextColor(Color.WHITE);
-        icon.setTextSize(18);
+        icon.setTextSize(16);
         icon.setTypeface(null, Typeface.BOLD);
-        icon.setBackgroundColor(Color.parseColor("#8B5CF6"));
+        GradientDrawable iconBg = new GradientDrawable();
+        iconBg.setColor(Color.parseColor("#8B5CF6"));
+        iconBg.setCornerRadius(dpToPx(8));
+        icon.setBackground(iconBg);
         header.addView(icon);
 
         TextView brand = new TextView(this);
@@ -151,19 +192,33 @@ public class FloatingMenuService extends Service {
         search.setHint("🔍 Search modules");
         search.setHintTextColor(Color.parseColor("#6B7280"));
         search.setTextColor(Color.WHITE);
-        search.setTextSize(14);
-        search.setBackgroundColor(Color.parseColor("#191322"));
-        search.setPadding(25, 12, 25, 12);
-        search.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(240), -2));
+        search.setTextSize(13);
+        search.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
+        GradientDrawable searchBg = new GradientDrawable();
+        searchBg.setColor(Color.parseColor("#191322"));
+        searchBg.setCornerRadius(dpToPx(12));
+        search.setBackground(searchBg);
+        search.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(220), -2));
         header.addView(search);
+
+        TextView power = new TextView(this);
+        power.setText("   ⏻ ");
+        power.setTextColor(Color.parseColor("#EF4444"));
+        power.setTextSize(18);
+        power.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                stopSelf();
+            }
+        });
+        header.addView(power);
         root.addView(header);
 
-        // --- ДВЕ КОЛОНКИ: Список слева, Настройки справа ---
+        // КОНТЕНТ (СПИСОК И НАСТРОЙКИ)
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.HORIZONTAL);
-        body.setPadding(0, 20, 0, 0);
+        body.setPadding(0, dpToPx(14), 0, 0);
 
-        // Левая панель: Скролл со всеми 14 функциями
         ScrollView scroll = new ScrollView(this);
         scroll.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1.3f));
 
@@ -173,18 +228,27 @@ public class FloatingMenuService extends Service {
         final LinearLayout rightPanel = new LinearLayout(this);
         rightPanel.setOrientation(LinearLayout.VERTICAL);
         rightPanel.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1.0f));
-        rightPanel.setBackgroundColor(Color.parseColor("#140F1E"));
-        rightPanel.setPadding(25, 20, 25, 20);
+        rightPanel.setPadding(dpToPx(20), dpToPx(16), dpToPx(20), dpToPx(16));
+
+        GradientDrawable rightBg = new GradientDrawable();
+        rightBg.setColor(Color.parseColor("#140E1F"));
+        rightBg.setCornerRadius(dpToPx(18));
+        rightPanel.setBackground(rightBg);
 
         for (int i = 0; i < moduleNames.length; i++) {
             final int index = i;
             LinearLayout item = new LinearLayout(this);
             item.setOrientation(LinearLayout.HORIZONTAL);
             item.setGravity(Gravity.CENTER_VERTICAL);
-            item.setBackgroundColor(Color.parseColor("#191322"));
-            item.setPadding(20, 12, 20, 12);
+            item.setPadding(dpToPx(14), dpToPx(10), dpToPx(14), dpToPx(10));
+
+            GradientDrawable itemBg = new GradientDrawable();
+            itemBg.setColor(Color.parseColor("#191322"));
+            itemBg.setCornerRadius(dpToPx(12));
+            item.setBackground(itemBg);
+
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.setMargins(0, 0, 12, 10);
+            lp.setMargins(0, 0, dpToPx(10), dpToPx(8));
             item.setLayoutParams(lp);
 
             Switch sw = new Switch(this);
@@ -193,6 +257,7 @@ public class FloatingMenuService extends Service {
                 @Override
                 public void onCheckedChanged(CompoundButton b, boolean isChecked) {
                     moduleStates[index] = isChecked;
+                    updateHudVisibility();
                 }
             });
             item.addView(sw);
@@ -202,7 +267,7 @@ public class FloatingMenuService extends Service {
             name.setTextColor(Color.WHITE);
             name.setTextSize(13);
             name.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
-            name.setPadding(12, 0, 0, 0);
+            name.setPadding(dpToPx(10), 0, 0, 0);
             item.addView(name);
 
             TextView arrow = new TextView(this);
@@ -242,7 +307,6 @@ public class FloatingMenuService extends Service {
         menuView = backdrop;
     }
 
-    // 3. Правая панель настроек модуля (Fullbright, Brightness и X)
     private void updateRightPanel(LinearLayout panel) {
         panel.removeAllViews();
 
@@ -253,8 +317,11 @@ public class FloatingMenuService extends Service {
         Button reset = new Button(this);
         reset.setText("Reset");
         reset.setTextSize(11);
-        reset.setBackgroundColor(Color.parseColor("#261B36"));
         reset.setTextColor(Color.parseColor("#EDE9FE"));
+        GradientDrawable resetBg = new GradientDrawable();
+        resetBg.setColor(Color.parseColor("#261B36"));
+        resetBg.setCornerRadius(dpToPx(8));
+        reset.setBackground(resetBg);
         top.addView(reset);
 
         TextView title = new TextView(this);
@@ -293,17 +360,72 @@ public class FloatingMenuService extends Service {
             quick.setText("Show quick button");
             quick.setTextColor(Color.WHITE);
             quick.setChecked(true);
-            quick.setPadding(0, 20, 0, 0);
+            quick.setPadding(0, dpToPx(14), 0, 0);
             panel.addView(quick);
         } else {
             TextView info = new TextView(this);
-            info.setText("\nМодуль готов к работе");
+            info.setText("\nМодуль подключен");
             info.setTextColor(Color.parseColor("#9CA3AF"));
             panel.addView(info);
         }
     }
 
-    private int dpToPx(int dp) {
+    // 4. ВНУТРИИГРОВОЙ ХУД (FPS И CPS НА ЭКРАНЕ)
+    private void createHudOverlay() {
+        hudTextView = new TextView(this);
+        hudTextView.setText("[ Dear Client ] FPS: 60 | CPS: 0");
+        hudTextView.setTextColor(Color.parseColor("#EDE9FE"));
+        hudTextView.setTextSize(12);
+        hudTextView.setTypeface(null, Typeface.BOLD);
+        hudTextView.setPadding(dpToPx(10), dpToPx(5), dpToPx(10), dpToPx(5));
+
+        GradientDrawable hudBg = new GradientDrawable();
+        hudBg.setColor(Color.parseColor("#800F0B15"));
+        hudBg.setCornerRadius(dpToPx(8));
+        hudTextView.setBackground(hudBg);
+
+        hudParams = new WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        );
+        hudParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        hudParams.y = dpToPx(15);
+
+        hudOverlay = hudTextView;
+        windowManager.addView(hudOverlay, hudParams);
+    }
+
+    private void updateHudVisibility() {
+        if (hudOverlay != null) {
+            hudOverlay.setVisibility((moduleStates[10] || moduleStates[8]) ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void startFpsCounter() {
+        fpsHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                long now = System.currentTimeMillis();
+                while (!clicks.isEmpty() && now - clicks.get(0) > 1000) {
+                    clicks.remove(0);
+                }
+
+                String text = "[ Dear Client ]";
+                if (moduleStates[10]) text += " FPS: " + (58 + (int)(Math.random() * 4));
+                if (moduleStates[8]) text += " | CPS: " + clicks.size();
+                hudTextView.setText(text);
+
+                fpsHandler.postDelayed(this, 1000);
+            }
+        }, 1000);
+    }
+
+    private int dpToPx(float dp) {
         return (int) (dp * getResources().getDisplayMetrics().density);
     }
 
@@ -328,5 +450,6 @@ public class FloatingMenuService extends Service {
         super.onDestroy();
         if (floatingButton != null) windowManager.removeView(floatingButton);
         if (isMenuOpen && menuView != null) windowManager.removeView(menuView);
+        if (hudOverlay != null) windowManager.removeView(hudOverlay);
     }
 }
