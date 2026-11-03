@@ -1,7 +1,6 @@
 package com.dearclient.launcher;
 
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.*;
@@ -19,19 +18,8 @@ import java.util.ArrayList;
 public class FloatingMenuService extends Service {
 
     private WindowManager windowManager;
-    private View floatingButton;
-    private View menuView;
-    private View hudOverlay;
-    private View zoomButton;
-    private View zoomScopeOverlay;
-    private View fullbrightQuickBtn;
-
-    private WindowManager.LayoutParams btnParams;
-    private WindowManager.LayoutParams menuParams;
-    private WindowManager.LayoutParams hudParams;
-    private WindowManager.LayoutParams zoomBtnParams;
-    private WindowManager.LayoutParams zoomScopeParams;
-    private WindowManager.LayoutParams fbQuickParams;
+    private View floatingButton, menuView, hudOverlay, zoomButton, zoomScopeOverlay, fullbrightQuickBtn;
+    private WindowManager.LayoutParams btnParams, menuParams, hudParams, zoomBtnParams, zoomScopeParams, fbQuickParams;
 
     private String[] moduleNames = {
         "Armor Hub", "Air Swing", "Freelook", "Fullbright",
@@ -43,11 +31,9 @@ public class FloatingMenuService extends Service {
     private boolean[] moduleStates = new boolean[14];
     private int selectedModule = 3;
     private boolean isMenuOpen = false;
-
     private float fullbrightLevel = 10.0f;
     private boolean showFbQuickBtn = true;
 
-    // HUD элементы
     private TextView hudTextView;
     private ArrayList<Long> clicks = new ArrayList<Long>();
     private Handler fpsHandler = new Handler();
@@ -60,10 +46,10 @@ public class FloatingMenuService extends Service {
         super.onCreate();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
-        moduleStates[3] = true;  // Fullbright включен
-        moduleStates[5] = true;  // Zoom включен
-        moduleStates[10] = true; // FPS включен
-        moduleStates[8] = true;  // CPS включен
+        moduleStates[3] = true;  // Fullbright
+        moduleStates[5] = true;  // Zoom
+        moduleStates[10] = true; // FPS
+        moduleStates[8] = true;  // CPS
 
         createFloatingButton();
         createFullMenu();
@@ -74,23 +60,23 @@ public class FloatingMenuService extends Service {
         applyBrightness();
     }
 
-    // 1. АВТО-СКРЫТИЕ: Прячет ВСЕ кнопки клиента на рабочем столе
+    // АВТО-СКРЫТИЕ НА РАБОЧЕМ СТОЛЕ
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         boolean isLandscape = (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE);
-        int visibility = isLandscape ? View.VISIBLE : View.GONE;
+        int vis = isLandscape ? View.VISIBLE : View.GONE;
 
-        if (floatingButton != null) floatingButton.setVisibility(visibility);
-        if (hudOverlay != null && (moduleStates[10] || moduleStates[8])) hudOverlay.setVisibility(visibility);
-        if (zoomButton != null && moduleStates[5]) zoomButton.setVisibility(visibility);
-        if (fullbrightQuickBtn != null && showFbQuickBtn && moduleStates[3]) fullbrightQuickBtn.setVisibility(visibility);
+        if (floatingButton != null) floatingButton.setVisibility(vis);
+        if (hudOverlay != null && (moduleStates[10] || moduleStates[8])) hudOverlay.setVisibility(vis);
+        if (zoomButton != null && moduleStates[5]) zoomButton.setVisibility(vis);
+        if (fullbrightQuickBtn != null && showFbQuickBtn && moduleStates[3]) fullbrightQuickBtn.setVisibility(vis);
 
         if (!isLandscape && isMenuOpen) closeMenu();
         if (!isLandscape && zoomScopeOverlay != null) zoomScopeOverlay.setVisibility(View.GONE);
     }
 
-    // 2. ГЛАВНАЯ КРУГЛАЯ КНОПКА [ D ]
+    // КРУГЛАЯ КНОПКА [ D ]
     private void createFloatingButton() {
         TextView btn = new TextView(this);
         btn.setText("D");
@@ -105,12 +91,11 @@ public class FloatingMenuService extends Service {
         circle.setStroke(dpToPx(2), Color.parseColor("#A78BFA"));
         btn.setBackground(circle);
 
-        int btnSize = dpToPx(54);
+        int sz = dpToPx(54);
         btnParams = new WindowManager.LayoutParams(
-            btnSize, btnSize,
+            sz, sz,
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-                WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         );
@@ -119,27 +104,23 @@ public class FloatingMenuService extends Service {
         btnParams.y = dpToPx(100);
 
         btn.setOnTouchListener(new View.OnTouchListener() {
-            private int initialX, initialY;
-            private float initialTouchX, initialTouchY;
+            private int initX, initY;
+            private float touchX, touchY;
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        initialX = btnParams.x;
-                        initialY = btnParams.y;
-                        initialTouchX = event.getRawX();
-                        initialTouchY = event.getRawY();
+                        initX = btnParams.x; initY = btnParams.y;
+                        touchX = event.getRawX(); touchY = event.getRawY();
                         return true;
-
                     case MotionEvent.ACTION_MOVE:
-                        btnParams.x = initialX + (int) (event.getRawX() - initialTouchX);
-                        btnParams.y = initialY + (int) (event.getRawY() - initialTouchY);
+                        btnParams.x = initX + (int)(event.getRawX() - touchX);
+                        btnParams.y = initY + (int)(event.getRawY() - touchY);
                         windowManager.updateViewLayout(floatingButton, btnParams);
                         return true;
-
                     case MotionEvent.ACTION_UP:
-                        if (Math.abs(event.getRawX() - initialTouchX) < 15 && Math.abs(event.getRawY() - initialTouchY) < 15) {
+                        if (Math.abs(event.getRawX() - touchX) < 15 && Math.abs(event.getRawY() - touchY) < 15) {
                             openMenu();
                         }
                         return true;
@@ -152,9 +133,8 @@ public class FloatingMenuService extends Service {
         windowManager.addView(floatingButton, btnParams);
     }
 
-    // 3. ОЖИВЛЕНИЕ ЗУМА: Плавающая кнопка 🔍 и прицел подзорной трубы
+    // ЗУМ И ПОДЗОРНАЯ ТРУБА
     private void createZoomWidgets() {
-        // Кнопка 🔍 ZOOM
         final TextView zBtn = new TextView(this);
         zBtn.setText("🔍");
         zBtn.setTextSize(18);
@@ -170,8 +150,7 @@ public class FloatingMenuService extends Service {
         zoomBtnParams = new WindowManager.LayoutParams(
             zSize, zSize,
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-                WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         );
@@ -179,44 +158,33 @@ public class FloatingMenuService extends Service {
         zoomBtnParams.x = dpToPx(40);
         zoomBtnParams.y = dpToPx(60);
 
-        // Полноэкранный прицел подзорной трубы (Spyglass Zoom)
         final View scopeView = new View(this) {
             private Paint darkPaint = new Paint();
             private Paint linePaint = new Paint();
-
             {
                 darkPaint.setColor(Color.parseColor("#E60A0710"));
                 linePaint.setColor(Color.parseColor("#8B5CF6"));
                 linePaint.setStrokeWidth(dpToPx(2));
                 linePaint.setStyle(Paint.Style.STROKE);
             }
-
             @Override
             protected void onDraw(Canvas canvas) {
                 super.onDraw(canvas);
-                int cx = getWidth() / 2;
-                int cy = getHeight() / 2;
-                int radius = dpToPx(160);
-
-                // Затемнение с круглым окном по центру
-                Path path = new Path();
-                path.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
-                path.addCircle(cx, cy, radius, Path.Direction.CCW);
-                canvas.drawPath(path, darkPaint);
-
-                // Оптический прицел внутри
-                canvas.drawCircle(cx, cy, radius, linePaint);
+                int cx = getWidth() / 2, cy = getHeight() / 2, rad = dpToPx(160);
+                Path p = new Path();
+                p.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
+                p.addCircle(cx, cy, rad, Path.Direction.CCW);
+                canvas.drawPath(p, darkPaint);
+                canvas.drawCircle(cx, cy, rad, linePaint);
                 canvas.drawLine(cx - dpToPx(25), cy, cx + dpToPx(25), cy, linePaint);
                 canvas.drawLine(cx, cy - dpToPx(25), cx, cy + dpToPx(25), linePaint);
             }
         };
 
         zoomScopeParams = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-                WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         );
@@ -225,36 +193,27 @@ public class FloatingMenuService extends Service {
         zoomScopeOverlay = scopeView;
         windowManager.addView(zoomScopeOverlay, zoomScopeParams);
 
-        // Нажатие на ЗУМ: зажал — приближение, отпустил — выключился
         zBtn.setOnTouchListener(new View.OnTouchListener() {
             private int initX, initY;
             private float touchX, touchY;
-            private boolean isDrag = false;
-
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        initX = zoomBtnParams.x;
-                        initY = zoomBtnParams.y;
-                        touchX = event.getRawX();
-                        touchY = event.getRawY();
-                        isDrag = false;
-                        zoomScopeOverlay.setVisibility(View.VISIBLE); // ВКЛЮЧАЕМ ЗУМ!
+                        initX = zoomBtnParams.x; initY = zoomBtnParams.y;
+                        touchX = event.getRawX(); touchY = event.getRawY();
+                        zoomScopeOverlay.setVisibility(View.VISIBLE);
                         return true;
-
                     case MotionEvent.ACTION_MOVE:
                         if (Math.abs(event.getRawX() - touchX) > 20 || Math.abs(event.getRawY() - touchY) > 20) {
-                            isDrag = true;
-                            zoomBtnParams.x = initX + (int) (event.getRawX() - touchX);
-                            zoomBtnParams.y = initY - (int) (event.getRawY() - touchY);
+                            zoomBtnParams.x = initX + (int)(event.getRawX() - touchX);
+                            zoomBtnParams.y = initY - (int)(event.getRawY() - touchY);
                             windowManager.updateViewLayout(zoomButton, zoomBtnParams);
                         }
                         return true;
-
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
-                        zoomScopeOverlay.setVisibility(View.GONE); // ВЫКЛЮЧАЕМ ЗУМ!
+                        zoomScopeOverlay.setVisibility(View.GONE);
                         return true;
                 }
                 return false;
@@ -265,21 +224,19 @@ public class FloatingMenuService extends Service {
         windowManager.addView(zoomButton, zoomBtnParams);
     }
 
-    // 4. ОЖИВЛЕНИЕ FULLBRIGHT (ЯРКОСТЬ) И БЫСТРАЯ КНОПКА ☀️
+    // БЫСТРАЯ КНОПКА ЯРКОСТИ ☀️
     private void createFullbrightQuickButton() {
         final TextView fbBtn = new TextView(this);
         fbBtn.setText("☀️");
         fbBtn.setTextSize(16);
         fbBtn.setGravity(Gravity.CENTER);
-
         updateFbButtonVisual(fbBtn);
 
-        int fbSize = dpToPx(44);
+        int sz = dpToPx(44);
         fbQuickParams = new WindowManager.LayoutParams(
-            fbSize, fbSize,
+            sz, sz,
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-                WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         );
@@ -293,7 +250,6 @@ public class FloatingMenuService extends Service {
                 moduleStates[3] = !moduleStates[3];
                 applyBrightness();
                 updateFbButtonVisual(fbBtn);
-                Toast.makeText(FloatingMenuService.this, "Fullbright: " + (moduleStates[3] ? "ON" : "OFF"), Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -309,20 +265,14 @@ public class FloatingMenuService extends Service {
         fbBtn.setBackground(bg);
     }
 
-    // Применение яркости экрана (ночное зрение)
     private void applyBrightness() {
         if (btnParams != null && floatingButton != null) {
-            if (moduleStates[3]) {
-                // Выкручиваем яркость на заданный уровень
-                btnParams.screenBrightness = Math.max(0.2f, fullbrightLevel / 10.0f);
-            } else {
-                btnParams.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
-            }
+            btnParams.screenBrightness = moduleStates[3] ? Math.max(0.2f, fullbrightLevel / 10.0f) : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
             windowManager.updateViewLayout(floatingButton, btnParams);
         }
     }
 
-    // 5. ОСНОВНОЕ ОКНО МЕНЮ
+    // ГЛАВНОЕ ОКНО МЕНЮ
     private void createFullMenu() {
         LinearLayout backdrop = new LinearLayout(this);
         backdrop.setGravity(Gravity.CENTER);
@@ -337,11 +287,8 @@ public class FloatingMenuService extends Service {
         rootBg.setCornerRadius(dpToPx(26));
         rootBg.setStroke(dpToPx(1.5f), Color.parseColor("#261B36"));
         root.setBackground(rootBg);
+        root.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(670), dpToPx(350)));
 
-        LinearLayout.LayoutParams rootParams = new LinearLayout.LayoutParams(dpToPx(670), dpToPx(350));
-        root.setLayoutParams(rootParams);
-
-        // ШАПКА
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -383,14 +330,11 @@ public class FloatingMenuService extends Service {
         power.setTextSize(18);
         power.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View v) {
-                stopSelf();
-            }
+            public void onClick(View v) { stopSelf(); }
         });
         header.addView(power);
         root.addView(header);
 
-        // КОЛОНКИ
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.HORIZONTAL);
         body.setPadding(0, dpToPx(14), 0, 0);
@@ -460,7 +404,6 @@ public class FloatingMenuService extends Service {
                     updateRightPanel(rightPanel);
                 }
             });
-
             list.addView(item);
         }
         scroll.addView(list);
@@ -473,15 +416,12 @@ public class FloatingMenuService extends Service {
         backdrop.addView(root);
 
         menuParams = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
-                WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         );
-
         menuView = backdrop;
     }
 
@@ -502,4 +442,51 @@ public class FloatingMenuService extends Service {
         reset.setBackground(resetBg);
         reset.setOnClickListener(new View.OnClickListener() {
             @Override
-            publ
+            public void onClick(View v) {
+                if (selectedModule == 3) {
+                    fullbrightLevel = 10.0f;
+                    showFbQuickBtn = true;
+                    applyBrightness();
+                    updateRightPanel(panel);
+                }
+            }
+        });
+        top.addView(reset);
+
+        TextView title = new TextView(this);
+        title.setText("   " + moduleNames[selectedModule]);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(16);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
+        top.addView(title);
+
+        TextView close = new TextView(this);
+        close.setText(" ✕ ");
+        close.setTextSize(22);
+        close.setTextColor(Color.WHITE);
+        close.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) { closeMenu(); }
+        });
+        top.addView(close);
+        panel.addView(top);
+
+        if (selectedModule == 3) {
+            TextView brLabel = new TextView(this);
+            brLabel.setText("\nBrightness (" + (int)fullbrightLevel + "/10)");
+            brLabel.setTextColor(Color.parseColor("#9CA3AF"));
+            panel.addView(brLabel);
+
+            SeekBar bar = new SeekBar(this);
+            bar.setMax(10);
+            bar.setProgress((int) fullbrightLevel);
+            bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar sb, int p, boolean b) {
+                    fullbrightLevel = Math.max(1, p);
+                    applyBrightness();
+                }
+                @Override
+                public void onStartTrackingTouch(SeekBar sb) {}
+      
