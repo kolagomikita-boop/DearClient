@@ -1,0 +1,59 @@
+name: Build Dear Client APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build and Sign APK
+        run: |
+          set -e
+          PLATFORM=$(ls -d $ANDROID_HOME/platforms/android-* | sort -V | tail -n 1)
+          TOOLS=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          echo "Using Platform: $PLATFORM"
+          echo "Using Build Tools: $TOOLS"
+          
+          mkdir -p build/gen build/obj build/bin
+          
+          # 1. Генерация ресурсов
+          $TOOLS/aapt package -f -m -J build/gen -M app/src/main/AndroidManifest.xml -I $PLATFORM/android.jar
+          
+          # 2. Компиляция Java кода
+          javac -d build/obj -cp $PLATFORM/android.jar $(find app/src/main/java build/gen -name "*.java")
+          
+          # 3. Создание DEX (байткода Android)
+          $TOOLS/d8 --output build/bin $(find build/obj -name "*.class")
+          
+          # 4. Упаковка APK
+          $TOOLS/aapt package -f -M app/src/main/AndroidManifest.xml -I $PLATFORM/android.jar -F build/bin/unsigned.apk
+          
+          # 5. Добавление классов
+          cd build/bin
+          zip -u unsigned.apk classes.dex
+          
+          # 6. Выравнивание (zipalign)
+          $TOOLS/zipalign -v -p 4 unsigned.apk DearClient.aligned.apk
+          
+          # 7. Генерация цифровой подписи и подписание APK
+          keytool -genkeypair -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=DearClient,O=DearClient,C=US"
+          $TOOLS/apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out DearClient.apk DearClient.aligned.apk
+          
+          echo "Готово! APK успешно собран."
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DearClient-v1.0-APK
+          path: build/bin/DearClient.apk
