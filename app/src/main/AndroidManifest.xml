@@ -6,7 +6,9 @@
         android:minSdkVersion="26"
         android:targetSdkVersion="35" />
 
-    <!-- Разрешение видеть и открывать Minecraft на Android 16 -->
+    <!-- Разрешение рисовать меню поверх Майнкрафта -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <queries>
         <package android:name="com.mojang.minecraftpe" />
     </queries>
@@ -14,6 +16,7 @@
     <application
         android:label="Dear Client"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -23,5 +26,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".FloatingMenuService"
+            android:enabled="true"
+            android:exported="false" />
     </application>
 </manifest>
