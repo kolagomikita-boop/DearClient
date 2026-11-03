@@ -18,7 +18,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Главный тёмный фон #0F0B15
+        // Главный темный фон #0F0B15
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#0F0B15"));
 
@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
         card1.addView(v1);
         root.addView(card1);
 
-        // 2. Карточка Minecraft 1.26.50
+        // 2. Карточка Minecraft 1.26.52
         LinearLayout card2 = createCard();
         TextView title2 = new TextView(this);
         title2.setText("Minecraft");
@@ -61,7 +61,7 @@ public class MainActivity extends Activity {
         card2.addView(title2);
 
         TextView v2 = new TextView(this);
-        v2.setText("1.26.50");
+        v2.setText("1.26.52");
         v2.setTextColor(Color.parseColor("#9CA3AF"));
         card2.addView(v2);
         root.addView(card2);
@@ -99,9 +99,9 @@ public class MainActivity extends Activity {
         chCard.addView(list);
         root.addView(chCard);
 
-        // 5. Кнопка Launch Minecraft
+        // 5. Кнопка Launch Minecraft 1.26.52
         Button launchBtn = new Button(this);
-        launchBtn.setText("▶  Launch Minecraft 1.26.50 with Dear Client");
+        launchBtn.setText("▶  Launch Minecraft 1.26.52 with Dear Client");
         launchBtn.setBackgroundColor(Color.parseColor("#8B5CF6"));
         launchBtn.setTextColor(Color.BLACK);
         launchBtn.setTextSize(15);
@@ -115,7 +115,7 @@ public class MainActivity extends Activity {
                 if (intent != null) {
                     startActivity(intent);
                 } else {
-                    Toast.makeText(MainActivity.this, "Minecraft 1.26.50 не найден!", Toast.LENGTH_LONG).show();
+                    Toast.makeText(MainActivity.this, "Minecraft 1.26.52 не найден!", Toast.LENGTH_LONG).show();
                 }
             }
         });
