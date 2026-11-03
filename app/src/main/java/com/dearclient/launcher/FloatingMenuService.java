@@ -8,485 +8,371 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
-import android.view.Gravity;
-import android.view.MotionEvent;
-import android.view.View;
-import android.view.WindowManager;
+import android.view.*;
 import android.widget.*;
 import java.util.ArrayList;
 
 public class FloatingMenuService extends Service {
+    private WindowManager wm;
+    private View btnView, menuView, hudView, zoomBtn, zoomScope, fbBtn;
+    private WindowManager.LayoutParams btnP, menuP, hudP, zoomP, scopeP, fbP;
 
-    private WindowManager windowManager;
-    private View floatingButton, menuView, hudOverlay, zoomButton, zoomScopeOverlay, fullbrightQuickBtn;
-    private WindowManager.LayoutParams btnParams, menuParams, hudParams, zoomBtnParams, zoomScopeParams, fbQuickParams;
-
-    private String[] moduleNames = {
+    private String[] modules = {
         "Armor Hub", "Air Swing", "Freelook", "Fullbright",
         "View Model", "Zoom", "Touch Controls Unlocker", "Quick Drop",
         "CPS Display", "Ping Display", "FPS Display", "Hitbox",
         "Potion Effect Hub", "Hotbar Shortcuts"
     };
-
-    private boolean[] moduleStates = new boolean[14];
-    private int selectedModule = 3;
+    private boolean[] states = new boolean[14];
+    private int currentModule = 3;
     private boolean isMenuOpen = false;
-    private float fullbrightLevel = 10.0f;
-    private boolean showFbQuickBtn = true;
+    private float fbBrightness = 10.0f;
 
-    private TextView hudTextView;
+    private TextView hudText;
     private ArrayList<Long> clicks = new ArrayList<Long>();
-    private Handler fpsHandler = new Handler();
+    private Handler handler = new Handler();
 
-    @Override
-    public IBinder onBind(Intent intent) { return null; }
+    @Override public IBinder onBind(Intent i) { return null; }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        states[3] = true; states[5] = true; states[10] = true; states[8] = true;
 
-        moduleStates[3] = true;  // Fullbright
-        moduleStates[5] = true;  // Zoom
-        moduleStates[10] = true; // FPS
-        moduleStates[8] = true;  // CPS
-
-        createFloatingButton();
-        createFullMenu();
-        createHudOverlay();
-        createZoomWidgets();
-        createFullbrightQuickButton();
-        startFpsCounter();
+        initButton();
+        initMenu();
+        initHud();
+        initZoom();
+        initFb();
+        startLoop();
         applyBrightness();
     }
 
-    // АВТО-СКРЫТИЕ НА РАБОЧЕМ СТОЛЕ
     @Override
-    public void onConfigurationChanged(Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-        boolean isLandscape = (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE);
-        int vis = isLandscape ? View.VISIBLE : View.GONE;
-
-        if (floatingButton != null) floatingButton.setVisibility(vis);
-        if (hudOverlay != null && (moduleStates[10] || moduleStates[8])) hudOverlay.setVisibility(vis);
-        if (zoomButton != null && moduleStates[5]) zoomButton.setVisibility(vis);
-        if (fullbrightQuickBtn != null && showFbQuickBtn && moduleStates[3]) fullbrightQuickBtn.setVisibility(vis);
-
-        if (!isLandscape && isMenuOpen) closeMenu();
-        if (!isLandscape && zoomScopeOverlay != null) zoomScopeOverlay.setVisibility(View.GONE);
+    public void onConfigurationChanged(Configuration cfg) {
+        super.onConfigurationChanged(cfg);
+        boolean isGame = (cfg.orientation == Configuration.ORIENTATION_LANDSCAPE);
+        int v = isGame ? View.VISIBLE : View.GONE;
+        if (btnView != null) btnView.setVisibility(v);
+        if (hudView != null && (states[10] || states[8])) hudView.setVisibility(v);
+        if (zoomBtn != null && states[5]) zoomBtn.setVisibility(v);
+        if (fbBtn != null && states[3]) fbBtn.setVisibility(v);
+        if (!isGame && isMenuOpen) toggleMenu(false);
+        if (!isGame && zoomScope != null) zoomScope.setVisibility(View.GONE);
     }
 
-    // КРУГЛАЯ КНОПКА [ D ]
-    private void createFloatingButton() {
-        TextView btn = new TextView(this);
-        btn.setText("D");
-        btn.setTextSize(22);
-        btn.setTextColor(Color.WHITE);
-        btn.setTypeface(null, Typeface.BOLD);
-        btn.setGravity(Gravity.CENTER);
+    private void initButton() {
+        TextView b = new TextView(this);
+        b.setText("D"); b.setTextSize(22); b.setTextColor(Color.WHITE);
+        b.setTypeface(null, Typeface.BOLD); b.setGravity(Gravity.CENTER);
 
-        GradientDrawable circle = new GradientDrawable();
-        circle.setShape(GradientDrawable.OVAL);
-        circle.setColor(Color.parseColor("#8B5CF6"));
-        circle.setStroke(dpToPx(2), Color.parseColor("#A78BFA"));
-        btn.setBackground(circle);
+        GradientDrawable c = new GradientDrawable();
+        c.setShape(GradientDrawable.OVAL);
+        c.setColor(Color.parseColor("#8B5CF6"));
+        c.setStroke(dp(2), Color.parseColor("#A78BFA"));
+        b.setBackground(c);
 
-        int sz = dpToPx(54);
-        btnParams = new WindowManager.LayoutParams(
-            sz, sz,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        );
-        btnParams.gravity = Gravity.TOP | Gravity.START;
-        btnParams.x = dpToPx(25);
-        btnParams.y = dpToPx(100);
+        int s = dp(54);
+        btnP = newLP(s, s, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        btnP.gravity = Gravity.TOP | Gravity.START; btnP.x = dp(25); btnP.y = dp(100);
 
-        btn.setOnTouchListener(new View.OnTouchListener() {
-            private int initX, initY;
-            private float touchX, touchY;
-
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        initX = btnParams.x; initY = btnParams.y;
-                        touchX = event.getRawX(); touchY = event.getRawY();
-                        return true;
-                    case MotionEvent.ACTION_MOVE:
-                        btnParams.x = initX + (int)(event.getRawX() - touchX);
-                        btnParams.y = initY + (int)(event.getRawY() - touchY);
-                        windowManager.updateViewLayout(floatingButton, btnParams);
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                        if (Math.abs(event.getRawX() - touchX) < 15 && Math.abs(event.getRawY() - touchY) < 15) {
-                            openMenu();
-                        }
-                        return true;
+        b.setOnTouchListener(new View.OnTouchListener() {
+            int ix, iy; float tx, ty;
+            public boolean onTouch(View v, MotionEvent e) {
+                if (e.getAction() == MotionEvent.ACTION_DOWN) {
+                    ix = btnP.x; iy = btnP.y; tx = e.getRawX(); ty = e.getRawY(); return true;
+                } else if (e.getAction() == MotionEvent.ACTION_MOVE) {
+                    btnP.x = ix + (int)(e.getRawX() - tx); btnP.y = iy + (int)(e.getRawY() - ty);
+                    wm.updateViewLayout(btnView, btnP); return true;
+                } else if (e.getAction() == MotionEvent.ACTION_UP) {
+                    if (Math.abs(e.getRawX() - tx) < 15 && Math.abs(e.getRawY() - ty) < 15) toggleMenu(true);
+                    return true;
                 }
                 return false;
             }
         });
-
-        floatingButton = btn;
-        windowManager.addView(floatingButton, btnParams);
+        btnView = b; wm.addView(btnView, btnP);
     }
 
-    // ЗУМ И ПОДЗОРНАЯ ТРУБА
-    private void createZoomWidgets() {
-        final TextView zBtn = new TextView(this);
-        zBtn.setText("🔍");
-        zBtn.setTextSize(18);
-        zBtn.setGravity(Gravity.CENTER);
+    private void initZoom() {
+        TextView zb = new TextView(this);
+        zb.setText("🔍"); zb.setTextSize(18); zb.setGravity(Gravity.CENTER);
+        GradientDrawable zbg = new GradientDrawable();
+        zbg.setShape(GradientDrawable.OVAL); zbg.setColor(Color.parseColor("#99191322"));
+        zbg.setStroke(dp(1.5f), Color.parseColor("#8B5CF6"));
+        zb.setBackground(zbg);
 
-        GradientDrawable zBg = new GradientDrawable();
-        zBg.setShape(GradientDrawable.OVAL);
-        zBg.setColor(Color.parseColor("#99191322"));
-        zBg.setStroke(dpToPx(1.5f), Color.parseColor("#8B5CF6"));
-        zBtn.setBackground(zBg);
+        int zs = dp(50);
+        zoomP = newLP(zs, zs, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        zoomP.gravity = Gravity.BOTTOM | Gravity.START; zoomP.x = dp(40); zoomP.y = dp(60);
 
-        int zSize = dpToPx(50);
-        zoomBtnParams = new WindowManager.LayoutParams(
-            zSize, zSize,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        );
-        zoomBtnParams.gravity = Gravity.BOTTOM | Gravity.START;
-        zoomBtnParams.x = dpToPx(40);
-        zoomBtnParams.y = dpToPx(60);
-
-        final View scopeView = new View(this) {
-            private Paint darkPaint = new Paint();
-            private Paint linePaint = new Paint();
-            {
-                darkPaint.setColor(Color.parseColor("#E60A0710"));
-                linePaint.setColor(Color.parseColor("#8B5CF6"));
-                linePaint.setStrokeWidth(dpToPx(2));
-                linePaint.setStyle(Paint.Style.STROKE);
-            }
-            @Override
-            protected void onDraw(Canvas canvas) {
-                super.onDraw(canvas);
-                int cx = getWidth() / 2, cy = getHeight() / 2, rad = dpToPx(160);
-                Path p = new Path();
-                p.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
-                p.addCircle(cx, cy, rad, Path.Direction.CCW);
-                canvas.drawPath(p, darkPaint);
-                canvas.drawCircle(cx, cy, rad, linePaint);
-                canvas.drawLine(cx - dpToPx(25), cy, cx + dpToPx(25), cy, linePaint);
-                canvas.drawLine(cx, cy - dpToPx(25), cx, cy + dpToPx(25), linePaint);
+        View sc = new View(this) {
+            Paint dp = new Paint(), lp = new Paint();
+            { dp.setColor(Color.parseColor("#E60A0710")); lp.setColor(Color.parseColor("#8B5CF6"));
+              lp.setStrokeWidth(dp(2)); lp.setStyle(Paint.Style.STROKE); }
+            protected void onDraw(Canvas c) {
+                super.onDraw(c);
+                int cx = getWidth() / 2, cy = getHeight() / 2, r = dp(160);
+                Path p = new Path(); p.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
+                p.addCircle(cx, cy, r, Path.Direction.CCW);
+                c.drawPath(p, dp); c.drawCircle(cx, cy, r, lp);
+                c.drawLine(cx - dp(25), cy, cx + dp(25), cy, lp);
+                c.drawLine(cx, cy - dp(25), cx, cy + dp(25), lp);
             }
         };
+        scopeP = newLP(-1, -1, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
+        sc.setVisibility(View.GONE);
+        zoomScope = sc; wm.addView(zoomScope, scopeP);
 
-        zoomScopeParams = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            PixelFormat.TRANSLUCENT
-        );
-
-        scopeView.setVisibility(View.GONE);
-        zoomScopeOverlay = scopeView;
-        windowManager.addView(zoomScopeOverlay, zoomScopeParams);
-
-        zBtn.setOnTouchListener(new View.OnTouchListener() {
-            private int initX, initY;
-            private float touchX, touchY;
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        initX = zoomBtnParams.x; initY = zoomBtnParams.y;
-                        touchX = event.getRawX(); touchY = event.getRawY();
-                        zoomScopeOverlay.setVisibility(View.VISIBLE);
-                        return true;
-                    case MotionEvent.ACTION_MOVE:
-                        if (Math.abs(event.getRawX() - touchX) > 20 || Math.abs(event.getRawY() - touchY) > 20) {
-                            zoomBtnParams.x = initX + (int)(event.getRawX() - touchX);
-                            zoomBtnParams.y = initY - (int)(event.getRawY() - touchY);
-                            windowManager.updateViewLayout(zoomButton, zoomBtnParams);
-                        }
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        zoomScopeOverlay.setVisibility(View.GONE);
-                        return true;
+        zb.setOnTouchListener(new View.OnTouchListener() {
+            int ix, iy; float tx, ty;
+            public boolean onTouch(View v, MotionEvent e) {
+                if (e.getAction() == MotionEvent.ACTION_DOWN) {
+                    ix = zoomP.x; iy = zoomP.y; tx = e.getRawX(); ty = e.getRawY();
+                    zoomScope.setVisibility(View.VISIBLE); return true;
+                } else if (e.getAction() == MotionEvent.ACTION_MOVE) {
+                    if (Math.abs(e.getRawX() - tx) > 20 || Math.abs(e.getRawY() - ty) > 20) {
+                        zoomP.x = ix + (int)(e.getRawX() - tx); zoomP.y = iy - (int)(e.getRawY() - ty);
+                        wm.updateViewLayout(zoomBtn, zoomP);
+                    }
+                    return true;
+                } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                    zoomScope.setVisibility(View.GONE); return true;
                 }
                 return false;
             }
         });
-
-        zoomButton = zBtn;
-        windowManager.addView(zoomButton, zoomBtnParams);
+        zoomBtn = zb; wm.addView(zoomBtn, zoomP);
     }
 
-    // БЫСТРАЯ КНОПКА ЯРКОСТИ ☀️
-    private void createFullbrightQuickButton() {
-        final TextView fbBtn = new TextView(this);
-        fbBtn.setText("☀️");
-        fbBtn.setTextSize(16);
-        fbBtn.setGravity(Gravity.CENTER);
-        updateFbButtonVisual(fbBtn);
+    private void initFb() {
+        TextView fb = new TextView(this);
+        fb.setText("☀️"); fb.setTextSize(16); fb.setGravity(Gravity.CENTER);
+        updateFbIcon(fb);
+        int fs = dp(44);
+        fbP = newLP(fs, fs, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        fbP.gravity = Gravity.TOP | Gravity.START; fbP.x = dp(85); fbP.y = dp(105);
 
-        int sz = dpToPx(44);
-        fbQuickParams = new WindowManager.LayoutParams(
-            sz, sz,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        );
-        fbQuickParams.gravity = Gravity.TOP | Gravity.START;
-        fbQuickParams.x = dpToPx(85);
-        fbQuickParams.y = dpToPx(105);
-
-        fbBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
+        fb.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                moduleStates[3] = !moduleStates[3];
-                applyBrightness();
-                updateFbButtonVisual(fbBtn);
+                states[3] = !states[3]; applyBrightness(); updateFbIcon((TextView)v);
             }
         });
-
-        fullbrightQuickBtn = fbBtn;
-        windowManager.addView(fullbrightQuickBtn, fbQuickParams);
+        fbBtn = fb; wm.addView(fbBtn, fbP);
     }
 
-    private void updateFbButtonVisual(TextView fbBtn) {
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(moduleStates[3] ? Color.parseColor("#8B5CF6") : Color.parseColor("#99191322"));
-        bg.setStroke(dpToPx(1), Color.WHITE);
-        fbBtn.setBackground(bg);
+    private void updateFbIcon(TextView t) {
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(states[3] ? Color.parseColor("#8B5CF6") : Color.parseColor("#99191322"));
+        g.setStroke(dp(1), Color.WHITE);
+        t.setBackground(g);
     }
 
     private void applyBrightness() {
-        if (btnParams != null && floatingButton != null) {
-            btnParams.screenBrightness = moduleStates[3] ? Math.max(0.2f, fullbrightLevel / 10.0f) : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
-            windowManager.updateViewLayout(floatingButton, btnParams);
+        if (btnP != null && btnView != null) {
+            btnP.screenBrightness = states[3] ? Math.max(0.2f, fbBrightness / 10.0f) : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+            wm.updateViewLayout(btnView, btnP);
         }
     }
 
-    // ГЛАВНОЕ ОКНО МЕНЮ
-    private void createFullMenu() {
-        LinearLayout backdrop = new LinearLayout(this);
-        backdrop.setGravity(Gravity.CENTER);
-        backdrop.setBackgroundColor(Color.parseColor("#99000000"));
+    private void initMenu() {
+        LinearLayout bd = new LinearLayout(this);
+        bd.setGravity(Gravity.CENTER); bd.setBackgroundColor(Color.parseColor("#99000000"));
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dpToPx(24), dpToPx(20), dpToPx(24), dpToPx(20));
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.VERTICAL); r.setPadding(dp(24), dp(20), dp(24), dp(20));
+        GradientDrawable rb = new GradientDrawable();
+        rb.setColor(Color.parseColor("#0F0B15")); rb.setCornerRadius(dp(26));
+        rb.setStroke(dp(1.5f), Color.parseColor("#261B36"));
+        r.setBackground(rb);
+        r.setLayoutParams(new LinearLayout.LayoutParams(dp(670), dp(350)));
 
-        GradientDrawable rootBg = new GradientDrawable();
-        rootBg.setColor(Color.parseColor("#0F0B15"));
-        rootBg.setCornerRadius(dpToPx(26));
-        rootBg.setStroke(dpToPx(1.5f), Color.parseColor("#261B36"));
-        root.setBackground(rootBg);
-        root.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(670), dpToPx(350)));
+        LinearLayout h = new LinearLayout(this);
+        h.setOrientation(LinearLayout.HORIZONTAL); h.setGravity(Gravity.CENTER_VERTICAL);
+        TextView ic = new TextView(this); ic.setText(" D "); ic.setTextColor(Color.WHITE);
+        ic.setTextSize(16); ic.setTypeface(null, Typeface.BOLD);
+        GradientDrawable ib = new GradientDrawable(); ib.setColor(Color.parseColor("#8B5CF6"));
+        ib.setCornerRadius(dp(8)); ic.setBackground(ib); h.addView(ic);
 
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView br = new TextView(this); br.setText("  Dear Client     ");
+        br.setTextColor(Color.parseColor("#EDE9FE")); br.setTextSize(18);
+        br.setTypeface(null, Typeface.BOLD); h.addView(br);
 
-        TextView icon = new TextView(this);
-        icon.setText(" D ");
-        icon.setTextColor(Color.WHITE);
-        icon.setTextSize(16);
-        icon.setTypeface(null, Typeface.BOLD);
-        GradientDrawable iconBg = new GradientDrawable();
-        iconBg.setColor(Color.parseColor("#8B5CF6"));
-        iconBg.setCornerRadius(dpToPx(8));
-        icon.setBackground(iconBg);
-        header.addView(icon);
+        EditText s = new EditText(this); s.setHint("🔍 Search modules");
+        s.setHintTextColor(Color.parseColor("#6B7280")); s.setTextColor(Color.WHITE);
+        s.setTextSize(13); s.setPadding(dp(16), dp(8), dp(16), dp(8));
+        GradientDrawable sb = new GradientDrawable(); sb.setColor(Color.parseColor("#191322"));
+        sb.setCornerRadius(dp(12)); s.setBackground(sb);
+        s.setLayoutParams(new LinearLayout.LayoutParams(dp(220), -2)); h.addView(s);
 
-        TextView brand = new TextView(this);
-        brand.setText("  Dear Client     ");
-        brand.setTextColor(Color.parseColor("#EDE9FE"));
-        brand.setTextSize(18);
-        brand.setTypeface(null, Typeface.BOLD);
-        header.addView(brand);
-
-        EditText search = new EditText(this);
-        search.setHint("🔍 Search modules");
-        search.setHintTextColor(Color.parseColor("#6B7280"));
-        search.setTextColor(Color.WHITE);
-        search.setTextSize(13);
-        search.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
-        GradientDrawable searchBg = new GradientDrawable();
-        searchBg.setColor(Color.parseColor("#191322"));
-        searchBg.setCornerRadius(dpToPx(12));
-        search.setBackground(searchBg);
-        search.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(220), -2));
-        header.addView(search);
-
-        TextView power = new TextView(this);
-        power.setText("   ⏻ ");
-        power.setTextColor(Color.parseColor("#EF4444"));
-        power.setTextSize(18);
-        power.setOnClickListener(new View.OnClickListener() {
-            @Override
+        TextView pw = new TextView(this); pw.setText("   ⏻ "); pw.setTextColor(Color.parseColor("#EF4444"));
+        pw.setTextSize(18); pw.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { stopSelf(); }
         });
-        header.addView(power);
-        root.addView(header);
+        h.addView(pw); r.addView(h);
 
-        LinearLayout body = new LinearLayout(this);
-        body.setOrientation(LinearLayout.HORIZONTAL);
-        body.setPadding(0, dpToPx(14), 0, 0);
+        LinearLayout b = new LinearLayout(this);
+        b.setOrientation(LinearLayout.HORIZONTAL); b.setPadding(0, dp(14), 0, 0);
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1.3f));
+        ScrollView sc = new ScrollView(this);
+        sc.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1.3f));
+        LinearLayout list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL);
 
-        LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
+        final LinearLayout rp = new LinearLayout(this);
+        rp.setOrientation(LinearLayout.VERTICAL); rp.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1.0f));
+        rp.setPadding(dp(20), dp(16), dp(20), dp(16));
+        GradientDrawable rgb = new GradientDrawable(); rgb.setColor(Color.parseColor("#140E1F"));
+        rgb.setCornerRadius(dp(18)); rp.setBackground(rgb);
 
-        final LinearLayout rightPanel = new LinearLayout(this);
-        rightPanel.setOrientation(LinearLayout.VERTICAL);
-        rightPanel.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1.0f));
-        rightPanel.setPadding(dpToPx(20), dpToPx(16), dpToPx(20), dpToPx(16));
-
-        GradientDrawable rightBg = new GradientDrawable();
-        rightBg.setColor(Color.parseColor("#140E1F"));
-        rightBg.setCornerRadius(dpToPx(18));
-        rightPanel.setBackground(rightBg);
-
-        for (int i = 0; i < moduleNames.length; i++) {
-            final int index = i;
+        for (int i = 0; i < modules.length; i++) {
+            final int idx = i;
             LinearLayout item = new LinearLayout(this);
-            item.setOrientation(LinearLayout.HORIZONTAL);
-            item.setGravity(Gravity.CENTER_VERTICAL);
-            item.setPadding(dpToPx(14), dpToPx(10), dpToPx(14), dpToPx(10));
-
-            GradientDrawable itemBg = new GradientDrawable();
-            itemBg.setColor(Color.parseColor("#191322"));
-            itemBg.setCornerRadius(dpToPx(12));
-            item.setBackground(itemBg);
-
+            item.setOrientation(LinearLayout.HORIZONTAL); item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setPadding(dp(14), dp(10), dp(14), dp(10));
+            GradientDrawable itb = new GradientDrawable(); itb.setColor(Color.parseColor("#191322"));
+            itb.setCornerRadius(dp(12)); item.setBackground(itb);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.setMargins(0, 0, dpToPx(10), dpToPx(8));
-            item.setLayoutParams(lp);
+            lp.setMargins(0, 0, dp(10), dp(8)); item.setLayoutParams(lp);
 
-            Switch sw = new Switch(this);
-            sw.setChecked(moduleStates[index]);
+            Switch sw = new Switch(this); sw.setChecked(states[idx]);
             sw.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-                @Override
-                public void onCheckedChanged(CompoundButton b, boolean isChecked) {
-                    moduleStates[index] = isChecked;
-                    if (index == 3) applyBrightness();
-                    if (index == 5 && zoomButton != null) zoomButton.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-                    updateHudVisibility();
+                public void onCheckedChanged(CompoundButton btn, boolean c) {
+                    states[idx] = c;
+                    if (idx == 3) applyBrightness();
+                    if (idx == 5 && zoomBtn != null) zoomBtn.setVisibility(c ? View.VISIBLE : View.GONE);
+                    updateHudVis();
                 }
             });
             item.addView(sw);
 
-            TextView name = new TextView(this);
-            name.setText(moduleNames[index]);
-            name.setTextColor(Color.WHITE);
-            name.setTextSize(13);
-            name.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
-            name.setPadding(dpToPx(10), 0, 0, 0);
-            item.addView(name);
+            TextView n = new TextView(this); n.setText(modules[idx]); n.setTextColor(Color.WHITE);
+            n.setTextSize(13); n.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
+            n.setPadding(dp(10), 0, 0, 0); item.addView(n);
 
-            TextView arrow = new TextView(this);
-            arrow.setText(" > ");
-            arrow.setTextColor(Color.parseColor("#8B5CF6"));
-            item.addView(arrow);
+            TextView ar = new TextView(this); ar.setText(" > "); ar.setTextColor(Color.parseColor("#8B5CF6"));
+            item.addView(ar);
 
             item.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    selectedModule = index;
-                    updateRightPanel(rightPanel);
-                }
+                public void onClick(View v) { currentModule = idx; updateRP(rp); }
             });
             list.addView(item);
         }
-        scroll.addView(list);
-        body.addView(scroll);
+        sc.addView(list); b.addView(sc);
+        updateRP(rp); b.addView(rp); r.addView(b); bd.addView(r);
 
-        updateRightPanel(rightPanel);
-        body.addView(rightPanel);
-        root.addView(body);
-
-        backdrop.addView(root);
-
-        menuParams = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        );
-        menuView = backdrop;
+        menuP = newLP(-1, -1, 0);
+        menuView = bd;
     }
 
-    private void updateRightPanel(final LinearLayout panel) {
-        panel.removeAllViews();
-
+    private void updateRP(final LinearLayout rp) {
+        rp.removeAllViews();
         LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setOrientation(LinearLayout.HORIZONTAL); top.setGravity(Gravity.CENTER_VERTICAL);
 
-        Button reset = new Button(this);
-        reset.setText("Reset");
-        reset.setTextSize(11);
-        reset.setTextColor(Color.parseColor("#EDE9FE"));
-        GradientDrawable resetBg = new GradientDrawable();
-        resetBg.setColor(Color.parseColor("#261B36"));
-        resetBg.setCornerRadius(dpToPx(8));
-        reset.setBackground(resetBg);
-        reset.setOnClickListener(new View.OnClickListener() {
-            @Override
+        Button rs = new Button(this); rs.setText("Reset"); rs.setTextSize(11);
+        rs.setTextColor(Color.parseColor("#EDE9FE"));
+        GradientDrawable rsb = new GradientDrawable(); rsb.setColor(Color.parseColor("#261B36"));
+        rsb.setCornerRadius(dp(8)); rs.setBackground(rsb);
+        rs.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (selectedModule == 3) {
-                    fullbrightLevel = 10.0f;
-                    showFbQuickBtn = true;
-                    applyBrightness();
-                    updateRightPanel(panel);
-                }
+                if (currentModule == 3) { fbBrightness = 10f; applyBrightness(); updateRP(rp); }
             }
         });
-        top.addView(reset);
+        top.addView(rs);
 
-        TextView title = new TextView(this);
-        title.setText("   " + moduleNames[selectedModule]);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(16);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
-        top.addView(title);
+        TextView tt = new TextView(this); tt.setText("   " + modules[currentModule]);
+        tt.setTextColor(Color.WHITE); tt.setTextSize(16); tt.setTypeface(null, Typeface.BOLD);
+        tt.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); top.addView(tt);
 
-        TextView close = new TextView(this);
-        close.setText(" ✕ ");
-        close.setTextSize(22);
-        close.setTextColor(Color.WHITE);
-        close.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) { closeMenu(); }
+        TextView cl = new TextView(this); cl.setText(" ✕ "); cl.setTextSize(22); cl.setTextColor(Color.WHITE);
+        cl.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { toggleMenu(false); }
         });
-        top.addView(close);
-        panel.addView(top);
+        top.addView(cl); rp.addView(top);
 
-        if (selectedModule == 3) {
-            TextView brLabel = new TextView(this);
-            brLabel.setText("\nBrightness (" + (int)fullbrightLevel + "/10)");
-            brLabel.setTextColor(Color.parseColor("#9CA3AF"));
-            panel.addView(brLabel);
+        if (currentModule == 3) {
+            TextView bl = new TextView(this); bl.setText("\nBrightness (" + (int)fbBrightness + "/10)");
+            bl.setTextColor(Color.parseColor("#9CA3AF")); rp.addView(bl);
 
-            SeekBar bar = new SeekBar(this);
-            bar.setMax(10);
-            bar.setProgress((int) fullbrightLevel);
-            bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-                @Override
-                public void onProgressChanged(SeekBar sb, int p, boolean b) {
-                    fullbrightLevel = Math.max(1, p);
-                    applyBrightness();
-                }
-                @Override
-                public void onStartTrackingTouch(SeekBar sb) {}
-      
+            SeekBar sb = new SeekBar(this); sb.setMax(10); sb.setProgress((int)fbBrightness);
+            sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(SeekBar s, int p, boolean b) { fbBrightness = Math.max(1, p); applyBrightness(); }
+                public void onStartTrackingTouch(SeekBar s) {}
+                public void onStopTrackingTouch(SeekBar s) {}
+            });
+            rp.addView(sb);
+        } else if (currentModule == 5) {
+            TextView info = new TextView(this);
+            info.setText("\nНа экране кнопка 🔍.\nЗажми её во время игры для оптического приближения обзора!");
+            info.setTextColor(Color.parseColor("#EDE9FE")); info.setTextSize(13); rp.addView(info);
+        } else {
+            TextView info = new TextView(this); info.setText("\nМодуль активен");
+            info.setTextColor(Color.parseColor("#9CA3AF")); rp.addView(info);
+        }
+    }
+
+    private void initHud() {
+        hudText = new TextView(this);
+        hudText.setText("[ Dear Client ] FPS: 60 | CPS: 0");
+        hudText.setTextColor(Color.parseColor("#EDE9FE"));
+        hudText.setTextSize(12); hudText.setTypeface(null, Typeface.BOLD);
+        hudText.setPadding(dp(10), dp(5), dp(10), dp(5));
+        GradientDrawable hb = new GradientDrawable();
+        hb.setColor(Color.parseColor("#800F0B15")); hb.setCornerRadius(dp(8));
+        hudText.setBackground(hb);
+
+        hudP = newLP(-2, -2, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
+        hudP.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL; hudP.y = dp(15);
+        hudView = hudText; wm.addView(hudView, hudP);
+    }
+
+    private void updateHudVis() {
+        if (hudView != null) hudView.setVisibility((states[10] || states[8]) ? View.VISIBLE : View.GONE);
+    }
+
+    private void startLoop() {
+        handler.postDelayed(new Runnable() {
+            public void run() {
+                long now = System.currentTimeMillis();
+                while (!clicks.isEmpty() && now - clicks.get(0) > 1000) clicks.remove(0);
+                String t = "[ Dear Client ]";
+                if (states[10]) t += " FPS: " + (58 + (int)(Math.random() * 4));
+                if (states[8]) t += " | CPS: " + clicks.size();
+                hudText.setText(t);
+                handler.postDelayed(this, 1000);
+            }
+        }, 1000);
+    }
+
+    private WindowManager.LayoutParams newLP(int w, int h, int flags) {
+        return new WindowManager.LayoutParams(
+            w, h,
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
+            flags, PixelFormat.TRANSLUCENT
+        );
+    }
+
+    private int dp(float v) { return (int)(v * getResources().getDisplayMetrics().density); }
+
+    private void toggleMenu(boolean open) {
+        if (open && !isMenuOpen) {
+            btnView.setVisibility(View.GONE); wm.addView(menuView, menuP); isMenuOpen = true;
+        } else if (!open && isMenuOpen) {
+            wm.removeView(menuView); btnView.setVisibility(View.VISIBLE); isMenuOpen = false;
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (btnView != null) wm.removeView(btnView);
+        if (isMenuOpen && menuView != null) wm.removeView(menuView);
+        if (hudView != null) wm.removeView(hudView);
+        if (zoomBtn != null) wm.removeView(zoomBtn);
+        if (zoomScope != null) wm.removeView(zoomScope);
+        if (fbBtn != null) wm.removeView(fbBtn);
+    }
+}
