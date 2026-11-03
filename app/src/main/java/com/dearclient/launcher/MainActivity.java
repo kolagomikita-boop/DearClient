@@ -4,7 +4,10 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -18,7 +21,6 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Главный темный фон #0F0B15
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#0F0B15"));
 
@@ -26,7 +28,7 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(40, 50, 40, 50);
 
-        // 1. Карточка Dear Client v1.0
+        // 1. Карточка Dear Client
         LinearLayout card1 = createCard();
         TextView logo = new TextView(this);
         logo.setText(" D ");
@@ -50,7 +52,7 @@ public class MainActivity extends Activity {
         card1.addView(v1);
         root.addView(card1);
 
-        // 2. Карточка Minecraft 1.26.50
+        // 2. Карточка Minecraft
         LinearLayout card2 = createCard();
         TextView title2 = new TextView(this);
         title2.setText("Minecraft");
@@ -61,12 +63,11 @@ public class MainActivity extends Activity {
         card2.addView(title2);
 
         TextView v2 = new TextView(this);
-        v2.setText("1.26.50");
+        v2.setText("1.26.52");
         v2.setTextColor(Color.parseColor("#9CA3AF"));
         card2.addView(v2);
         root.addView(card2);
 
-        // 3. Заголовок Changelogs
         TextView chTitle = new TextView(this);
         chTitle.setText("\nChangelogs\n");
         chTitle.setTextSize(22);
@@ -74,7 +75,7 @@ public class MainActivity extends Activity {
         chTitle.setTypeface(null, Typeface.BOLD);
         root.addView(chTitle);
 
-        // 4. Список ваших 14 функций
+        // 3. Список всех 14 функций
         LinearLayout chCard = createCard();
         chCard.setOrientation(LinearLayout.VERTICAL);
         TextView list = new TextView(this);
@@ -99,9 +100,9 @@ public class MainActivity extends Activity {
         chCard.addView(list);
         root.addView(chCard);
 
-        // 5. Кнопка Launch Minecraft
+        // 4. Кнопка запуска
         Button launchBtn = new Button(this);
-        launchBtn.setText("▶  Launch Minecraft 1.26.50 with Dear Client");
+        launchBtn.setText("▶  Launch Minecraft with Dear Client");
         launchBtn.setBackgroundColor(Color.parseColor("#8B5CF6"));
         launchBtn.setTextColor(Color.BLACK);
         launchBtn.setTextSize(15);
@@ -111,11 +112,23 @@ public class MainActivity extends Activity {
         launchBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                // Запрос системного разрешения поверх экрана
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(MainActivity.this)) {
+                    Toast.makeText(MainActivity.this, "Разрешите отображение поверх других приложений!", Toast.LENGTH_LONG).show();
+                    Intent pIntent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+                    startActivity(pIntent);
+                    return;
+                }
+
+                // Запуск внутриигрового меню
+                startService(new Intent(MainActivity.this, FloatingMenuService.class));
+
+                // Запуск Minecraft
                 Intent intent = getPackageManager().getLaunchIntentForPackage("com.mojang.minecraftpe");
                 if (intent != null) {
                     startActivity(intent);
                 } else {
-                    Toast.makeText(MainActivity.this, "Minecraft 1.26.50 не найден!", Toast.LENGTH_LONG).show();
+                    Toast.makeText(MainActivity.this, "Minecraft не найден!", Toast.LENGTH_LONG).show();
                 }
             }
         });
